@@ -10,6 +10,30 @@ def cat_file(blob_sha):
     print(file.decode(), end="")
 
 
+def ls_tree(sha1):
+    compressed_file = f".git/objects/{sha1[0:2]}/{sha1[2:]}"
+    file = decompress(compressed_file)
+    i = 0
+    SHA_LENGTH = 20
+    names = []
+    while i < len(file) and file[i : i + 1] != b"\x00":
+        i += 1
+
+    i += 1
+    while i < len(file):
+        while i < len(file) and file[i : i + 1] != b" ":
+            i += 1
+        i += 1
+        start = i
+        while i < len(file) and file[i : i + 1] != b"\x00":
+            i += 1
+        filename = file[start:i].decode()
+        i += 1 + SHA_LENGTH
+        names.append(filename)
+
+    print("\n".join(names))
+
+
 def hash_object(filename):
     fr = open(filename, "r")
     file_content = fr.read()
@@ -48,12 +72,16 @@ def main():
         init()
     elif command == "cat-file":
         _ = sys.argv[2]
-        value = sys.argv[3]
-        cat_file(value)
+        sha1 = sys.argv[3]
+        cat_file(sha1)
     elif command == "hash-object":
         _ = sys.argv[2]
         filename = sys.argv[3]
         hash_object(filename)
+    elif command == "ls-tree":
+        _ = sys.argv[2]
+        sha1 = sys.argv[3]
+        ls_tree(sha1)
     else:
         raise RuntimeError(f"Unknown command #{command}")
 
