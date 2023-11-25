@@ -2,11 +2,18 @@ import sys
 import os
 import zlib
 import hashlib
+import argparse
+from pathlib import Path
+
+object_path = Path(".git/objects/")
 
 
 def cat_file(blob_sha):
-    compressed_file = f".git/objects/{blob_sha[0:2]}/{blob_sha[2:]}"
-    _, file = decompress(compressed_file).split(b"\x00")
+    path = Path(f".git/objects/{blob_sha[0:2]}/{blob_sha[2:]}")
+    fp = open(path, "rb")
+    content = zlib.decompress(fp.read())
+    fp.close()
+    _, file = content.split(b"\x00")
     print(file.decode(), end="")
 
 
@@ -34,56 +41,125 @@ def ls_tree(sha1):
     print("\n".join(names))
 
 
-def hash_object(filename):
-    fr = open(filename, "r")
-    file_content = fr.read()
-    fr.close()
-    content = f"blob {len(file_content)}\x00{file_content}".encode()
-    checksum = hashlib.sha1(content).hexdigest()
-    dir = checksum[:2]
-    file_hash = checksum[2:]
-    content = zlib.compress(content)
-    if not os.path.isdir(f".git/objects/{dir}"):
-        os.mkdir(f".git/objects/{dir}")
-    f = open(f".git/objects/{dir}/{file_hash}", "wb")
-    f.write(content)
-    f.close()
-    print(checksum, end="")
+def write_tree(path="."):
+    out = b""
+    files = sorted([file for file in os.listdir(path)])
+    for file in files:
+        if file == ".git":
+            continue
+        if path != ".":
+            file = f"{path}/{file}"
+        is_dir = os.path.isdir(file)
+        mode = b"40000" if is_dir else b"100644"
+        sha1 = write_tree(file) if is_dir else write_blob(file)
+        result = mode + b" " + file.encode() + b"\0" + bytes.fromhex(sha1)
+        out += result
+
+    out = b"tree" + b" " + str(len(out)).encode() + b"\0" + out
+    sha1 = hashlib.sha1(out).hexdigest()
+
+    out = zlib.compress(out)
+    if not os.path.isdir(object_path / f"{sha1[:2]}"):
+        os.makedirs(object_path / f"{sha1[:2]}")
+    filepath = object_path / f"{sha1[:2]}" / f"{sha1[2:]}"
+    if not filepath.exists():
+        with open(filepath, "wb") as f:
+            f.write(out)
+
+    return sha1
+
+
+def write_blob(path):
+    # get the hash : requires path
+    path = Path(path)
+    fp = open(path, "rb")
+    content = fp.read()
+    fp.close()
+    full_content = b"blob" + b" " + str(len(content)).encode() + b"\x00" + content
+    sha1 = hashlib.sha1(full_content).hexdigest()
+
+    # compress and save in git object
+    content = zlib.compress(full_content)
+    if not os.path.isdir(object_path / f"{sha1[:2]}"):
+        os.makedirs(object_path / f"{sha1[:2]}")
+    filepath = object_path / f"{sha1[:2]}" / f"{sha1[2:]}"
+    if not filepath.exists():
+        with open(filepath, "wb") as f:
+            f.write(content)
+    return sha1
 
 
 def decompress(compressed_file):
-    str_object1 = open(compressed_file, "rb").read()
+    path = Path(compressed_file)
+    str_object1 = open(path, "rb").read()
     str_object2 = zlib.decompress(str_object1)
     return str_object2
 
 
 def init():
-    os.mkdir(".git")
-    os.mkdir(".git/objects")
-    os.mkdir(".git/refs")
-    with open(".git/HEAD", "w") as f:
+    path = Path(".git")
+    os.mkdir(path)
+    os.mkdir(path / "objects")
+    os.mkdir(path / "refs")
+    with open(path / "HEAD", "w") as f:
         f.write("ref: refs/heads/master\n")
     print("Initialized git directory")
 
 
 def main():
     command = sys.argv[1]
-    if command == "init":
-        init()
-    elif command == "cat-file":
-        _ = sys.argv[2]
-        sha1 = sys.argv[3]
-        cat_file(sha1)
-    elif command == "hash-object":
-        _ = sys.argv[2]
-        filename = sys.argv[3]
-        hash_object(filename)
-    elif command == "ls-tree":
-        _ = sys.argv[2]
-        sha1 = sys.argv[3]
-        ls_tree(sha1)
-    else:
-        raise RuntimeError(f"Unknown command #{command}")
+    argparser = argparse.ArgumentParser(
+        prog="Write your own git",
+        description="Trying to learn git by building git itself",
+    )
+    argsubparsers = argparser.add_subparsers(title="Commands", dest="command")
+    argsubparsers.required = True
+
+    # init
+    init_sp = argsubparsers.add_parser(
+        "init", help="Initialize a new, empty repository."
+    )
+    init_sp.add_argument(
+        "path",
+        metavar="directory",
+        nargs="?",
+        default=".",
+        help="Where to create the repository.",
+    )
+
+    # cat-file
+    cat_file_sp = argsubparsers.add_parser("cat-file", help="read the git object")
+    cat_file_sp.add_argument("-p", action="store_true")
+    cat_file_sp.add_argument("sha", help="hash of a git object")
+
+    # hash-object
+    hash_object_sp = argsubparsers.add_parser("hash-object", help="hash object")
+    hash_object_sp.add_argument("-w", dest="file", help="file to hash")
+
+    # ls-tree
+    ls_tree_sp = argsubparsers.add_parser("ls-tree", help="read the git object")
+    ls_tree_sp.add_argument("--name-only", action="store_true")
+    ls_tree_sp.add_argument("sha", help="hash of a tree object")
+
+    # write-tree
+    argsubparsers.add_parser("write-tree", help="write tree")
+
+    args = argparser.parse_args(sys.argv[1:])
+    match args.command:
+        case "init":
+            init()
+        case "cat-file":
+            cat_file(args.sha)
+        case "hash-object":
+            sha = write_blob(args.file)
+            print(sha)
+        case "ls-tree":
+            ls_tree(args.sha)
+        case "write-tree":
+            sha = write_tree()
+            print(sha)
+        case _:
+            raise RuntimeError(f"Unknown command #{command}")
 
 
 if __name__ == "__main__":
