@@ -38,16 +38,7 @@ def write_blob(path):
     content = fp.read()
     fp.close()
     full_content = b"blob" + b" " + str(len(content)).encode() + b"\x00" + content
-    sha1 = hashlib.sha1(full_content).hexdigest()
-
-    # compress and save in git object
-    content = zlib.compress(full_content)
-    os.makedirs(OBJECT_PATH / f"{sha1[:2]}", exist_ok=True)
-    filepath = OBJECT_PATH / f"{sha1[:2]}" / f"{sha1[2:]}"
-    if not filepath.exists():
-        with open(filepath, "wb") as f:
-            f.write(content)
-    return sha1
+    return write_object(full_content)
 
 
 def ls_tree(sha1):
@@ -90,16 +81,7 @@ def write_tree(path="."):
         out += result
 
     out = b"tree" + b" " + str(len(out)).encode() + b"\0" + out
-    sha1 = hashlib.sha1(out).hexdigest()
-
-    out = zlib.compress(out)
-    os.makedirs(OBJECT_PATH / f"{sha1[:2]}", exist_ok=True)
-    filepath = OBJECT_PATH / f"{sha1[:2]}" / f"{sha1[2:]}"
-    if not filepath.exists():
-        with open(filepath, "wb") as f:
-            f.write(out)
-
-    return sha1
+    return write_object(out)
 
 
 def commit_tree(tree_id, parent_id, message):
@@ -142,7 +124,6 @@ def init():
 
 
 def main():
-    command = sys.argv[1]
     argparser = argparse.ArgumentParser(
         prog="Write your own git",
         description="Trying to learn git by building git itself",
@@ -178,6 +159,8 @@ def main():
 
     # write-tree
     argsubparsers.add_parser("write-tree", help="write tree")
+
+    # commit-tree
     commit_tree_sp = argsubparsers.add_parser(
         "commit-tree", help="create a commit object"
     )
@@ -185,7 +168,13 @@ def main():
     commit_tree_sp.add_argument("-p", help="id of a parent commit object")
     commit_tree_sp.add_argument("-m", help="paragraph in the commit log message")
 
-    args = argparser.parse_args(sys.argv[1:])
+    clone_parser = argsubparsers.add_parser(
+        "clone", help="Clone a repository into a new directory"
+    )
+    clone_parser.add_argument("url", help="url to clone from")
+
+    # clone
+    args = argparser.parse_args()
     match args.command:
         case "init":
             init()
@@ -203,7 +192,7 @@ def main():
             sha = commit_tree(args.tree, args.p, args.m)
             print(sha)
         case _:
-            raise RuntimeError(f"Unknown command #{command}")
+            raise RuntimeError(f"Unknown command #{args.command}")
 
 
 if __name__ == "__main__":
