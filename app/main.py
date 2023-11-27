@@ -1,11 +1,25 @@
-import sys
-import os
-import zlib
-import hashlib
 import argparse
+import hashlib
+import os
+import sys
+import zlib
+import time
 from pathlib import Path
 
-object_path = Path(".git/objects/")
+OBJECT_PATH = Path(".git/objects/")
+
+
+def write_object(content):
+    sha1 = hashlib.sha1(content).hexdigest()
+
+    content = zlib.compress(content)
+    os.makedirs(OBJECT_PATH / f"{sha1[:2]}", exist_ok=True)
+    filepath = OBJECT_PATH / f"{sha1[:2]}" / f"{sha1[2:]}"
+    if not filepath.exists():
+        with open(filepath, "wb") as f:
+            f.write(content)
+
+    return sha1
 
 
 def cat_file(blob_sha):
@@ -15,6 +29,25 @@ def cat_file(blob_sha):
     fp.close()
     _, file = content.split(b"\x00")
     print(file.decode(), end="")
+
+
+def write_blob(path):
+    # get the hash : requires path
+    path = Path(path)
+    fp = open(path, "rb")
+    content = fp.read()
+    fp.close()
+    full_content = b"blob" + b" " + str(len(content)).encode() + b"\x00" + content
+    sha1 = hashlib.sha1(full_content).hexdigest()
+
+    # compress and save in git object
+    content = zlib.compress(full_content)
+    os.makedirs(OBJECT_PATH / f"{sha1[:2]}", exist_ok=True)
+    filepath = OBJECT_PATH / f"{sha1[:2]}" / f"{sha1[2:]}"
+    if not filepath.exists():
+        with open(filepath, "wb") as f:
+            f.write(content)
+    return sha1
 
 
 def ls_tree(sha1):
@@ -60,8 +93,8 @@ def write_tree(path="."):
     sha1 = hashlib.sha1(out).hexdigest()
 
     out = zlib.compress(out)
-    os.makedirs(object_path / f"{sha1[:2]}", exist_ok=True)
-    filepath = object_path / f"{sha1[:2]}" / f"{sha1[2:]}"
+    os.makedirs(OBJECT_PATH / f"{sha1[:2]}", exist_ok=True)
+    filepath = OBJECT_PATH / f"{sha1[:2]}" / f"{sha1[2:]}"
     if not filepath.exists():
         with open(filepath, "wb") as f:
             f.write(out)
@@ -69,23 +102,26 @@ def write_tree(path="."):
     return sha1
 
 
-def write_blob(path):
-    # get the hash : requires path
-    path = Path(path)
-    fp = open(path, "rb")
-    content = fp.read()
-    fp.close()
-    full_content = b"blob" + b" " + str(len(content)).encode() + b"\x00" + content
-    sha1 = hashlib.sha1(full_content).hexdigest()
+def commit_tree(tree_id, parent_id, message):
+    tree = f"tree {tree_id}"
+    parent = f"parent {parent_id}"
 
-    # compress and save in git object
-    content = zlib.compress(full_content)
-    os.makedirs(object_path / f"{sha1[:2]}", exist_ok=True)
-    filepath = object_path / f"{sha1[:2]}" / f"{sha1[2:]}"
-    if not filepath.exists():
-        with open(filepath, "wb") as f:
-            f.write(content)
-    return sha1
+    author = {
+        "name": "Rabin Dhamala",
+        "email": "rabinkmc@gmail.com",
+    }
+
+    now = int(time.time())
+    author_info = f'author {author["name"]} <{author["email"]}> {now} +0545'
+    committer_info = f'committer {author["name"]} <{author["email"]}> {now} +0545'
+    commit_str = (
+        "\n".join([tree, parent, author_info, committer_info]) + "\n\n" + message + "\n"
+    )
+    commit_str_with_header = (
+        b"commit " + str(len(commit_str)).encode() + b"\0" + commit_str.encode()
+    )
+
+    return write_object(commit_str_with_header)
 
 
 def decompress(compressed_file):
@@ -142,6 +178,12 @@ def main():
 
     # write-tree
     argsubparsers.add_parser("write-tree", help="write tree")
+    commit_tree_sp = argsubparsers.add_parser(
+        "commit-tree", help="create a commit object"
+    )
+    commit_tree_sp.add_argument("tree", help="id of an existing tree object")
+    commit_tree_sp.add_argument("-p", help="id of a parent commit object")
+    commit_tree_sp.add_argument("-m", help="paragraph in the commit log message")
 
     args = argparser.parse_args(sys.argv[1:])
     match args.command:
@@ -156,6 +198,9 @@ def main():
             ls_tree(args.sha)
         case "write-tree":
             sha = write_tree()
+            print(sha)
+        case "commit-tree":
+            sha = commit_tree(args.tree, args.p, args.m)
             print(sha)
         case _:
             raise RuntimeError(f"Unknown command #{command}")
