@@ -45,6 +45,7 @@ def write_tree(path="."):
     out = b""
     files = sorted([file for file in os.listdir(path)])
     for file in files:
+        filename = file
         if file == ".git":
             continue
         if path != ".":
@@ -52,15 +53,14 @@ def write_tree(path="."):
         is_dir = os.path.isdir(file)
         mode = b"40000" if is_dir else b"100644"
         sha1 = write_tree(file) if is_dir else write_blob(file)
-        result = mode + b" " + file.encode() + b"\0" + bytes.fromhex(sha1)
+        result = mode + b" " + filename.encode() + b"\0" + bytes.fromhex(sha1)
         out += result
 
     out = b"tree" + b" " + str(len(out)).encode() + b"\0" + out
     sha1 = hashlib.sha1(out).hexdigest()
 
     out = zlib.compress(out)
-    if not os.path.isdir(object_path / f"{sha1[:2]}"):
-        os.makedirs(object_path / f"{sha1[:2]}")
+    os.makedirs(object_path / f"{sha1[:2]}", exist_ok=True)
     filepath = object_path / f"{sha1[:2]}" / f"{sha1[2:]}"
     if not filepath.exists():
         with open(filepath, "wb") as f:
@@ -80,8 +80,7 @@ def write_blob(path):
 
     # compress and save in git object
     content = zlib.compress(full_content)
-    if not os.path.isdir(object_path / f"{sha1[:2]}"):
-        os.makedirs(object_path / f"{sha1[:2]}")
+    os.makedirs(object_path / f"{sha1[:2]}", exist_ok=True)
     filepath = object_path / f"{sha1[:2]}" / f"{sha1[2:]}"
     if not filepath.exists():
         with open(filepath, "wb") as f:
