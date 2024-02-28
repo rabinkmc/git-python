@@ -3,27 +3,13 @@
 This is a starting point for Python solutions to the
 ["Build Your Own Git" Challenge](https://codecrafters.io/challenges/git).
 
-In this challenge, you'll build a small Git implementation that's capable of
+In this challenge, we'll build a small Git implementation that's capable of
 initializing a repository, creating commits and cloning a public repository.
 Along the way we'll learn about the `.git` directory, Git objects (blobs,
 commits, trees etc.), Git's transfer protocols and more.
 
 **Note**: If you're viewing this repo on GitHub, head over to
 [codecrafters.io](https://codecrafters.io) to try the challenge.
-
-# Passing the first stage
-
-The entry point for your Git implementation is in `app/main.py`. Study and
-uncomment the relevant code, and push your changes to pass the first stage:
-
-```sh
-git add .
-git commit -m "pass 1st stage" # any msg
-git push origin master
-```
-
-That's all!
-
 
 1. Ensure you have `python` installed locally
 2. Run `./your_git.sh` to run your Git implementation, which is implemented in
